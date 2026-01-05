@@ -5,962 +5,437 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Equipo IA: Misión Rescate</title>
 
-<!--
-==============================================================
-EQUIPO IA: MISIÓN RESCATE — SPA en un solo archivo
-Autor: ChatGPT (para @cris, Gnius Club)
-Requisitos cubiertos:
-- HTML único con CSS y JS embebidos (sin dependencias externas)
-- Pantallas: Base de Mando (briefing), Juego (vista lateral), Final
-- Personajes: Comandante (humano) y robot Bolt
-- Obstáculos secuenciales + mecánica de arrastrar/soltar (con soporte táctil)
-- Menú de comandos con iconos grandes y alto contraste
-- Progreso de misión, feedback visual/sonoro y narrado (SpeechSynthesis)
-- Accesible, responsive (desktop/móvil), código comentado y organizado
-- Rejugabilidad básica: medallas por eficiencia, pistas, “mejoras” cosméticas para Bolt
-==============================================================
--->
-
 <style>
-  :root{
-    --bg:#0b1020;
-    --panel:#0f1730;
-    --accent:#00e0ff;
-    --accent-2:#19ff84;
-    --warning:#ff385c;
-    --ok:#21e37c;
-    --text:#f5fbff;
-    --muted:#b6c7d9;
-    --shadow:0 10px 24px rgba(0,0,0,.35);
+  :root {
+    --bg: #0b1020;
+    --accent: #00e0ff;
+    --accent-2: #19ff84;
+    --warning: #ff385c;
+    --text: #f5fbff;
+    --muted: #b6c7d9;
     --card: #111a36;
-    --gold: #ffd54a;
-    --silver:#cfd8dc;
-    --bronze:#d79a6a;
   }
 
-  /* Reset básico */
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body{
-    margin:0;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji","Segoe UI Emoji";
-    color:var(--text);
-    background: radial-gradient(1200px 600px at 70% -10%, #15224c 0%, var(--bg) 60%);
-    overflow-x:hidden;
+  body {
+    margin: 0; font-family: 'Segoe UI', sans-serif;
+    color: var(--text); background: var(--bg);
+    height: 100vh; display: flex; justify-content: center; align-items: center;
+    overflow: hidden;
   }
 
-  /* Layout principal */
-  .container{
-    max-width:1100px;
-    margin:0 auto;
-    padding: clamp(12px, 2vw, 24px);
+  #game-container {
+    width: 100%; max-width: 1024px; height: 98vh;
+    background: rgba(15, 23, 48, 0.95);
+    border: 3px solid #1b2b6b; border-radius: 20px;
+    position: relative; display: flex; flex-direction: column;
+    box-shadow: 0 0 40px rgba(0,0,0,0.8);
   }
 
-  .card{
-    background:linear-gradient(180deg, #0c1534 0%, var(--card) 100%);
-    border:1px solid #1b2b6b;
-    border-radius:18px;
-    box-shadow: var(--shadow);
-    padding: clamp(14px, 2vw, 24px);
+  .scene { display: none; flex-direction: column; height: 100%; padding: 20px; animation: fadeIn 0.4s; }
+  .scene.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .audio-btn {
+    position: absolute; top: 15px; right: 15px; z-index: 1100;
+    background: #1a2d6b; border: 2px solid var(--accent);
+    color: var(--accent); width: 40px; height: 40px; border-radius: 50%;
+    cursor: pointer; font-size: 18px;
   }
 
-  h1,h2,h3{
-    margin:8px 0 12px;
-    letter-spacing:.3px;
+  .hud {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px; background: #070d1f; border-radius: 10px; margin-bottom: 10px;
+    z-index: 10;
   }
+  .timer { font-family: monospace; font-size: 24px; color: var(--warning); background: #000; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--warning); }
 
-  .title{
-    font-size: clamp(22px, 4vw, 36px);
-    line-height:1.1;
-    display:flex; align-items:center; gap:10px;
+  .playfield {
+    flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    padding: 10px; background: rgba(0,0,0,0.3); border-radius: 15px; align-items: stretch;
   }
-  .subtitle{ color:var(--muted); margin-top:-4px; font-size:clamp(14px,2.2vw,16px); }
+  .obstacle {
+    border: 2px dashed #24418f; border-radius: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative; background: rgba(12, 26, 64, 0.6); transition: 0.3s;
+    text-align: center; padding: 10px;
+  }
+  .obstacle.active-step { border-color: var(--accent); background: rgba(0, 224, 255, 0.1); box-shadow: 0 0 15px var(--accent); }
+  .obstacle.completed { border: 2px solid var(--accent-2); background: rgba(25, 255, 132, 0.1); }
+  
+  .obs-icon { font-size: 50px; margin: 10px 0; }
+  .obs-label { font-size: 12px; font-weight: bold; color: var(--muted); margin-bottom: 5px; }
 
-  /* Barra superior */
-  .topbar{
-    display:flex; align-items:center; justify-content:space-between;
-    gap:10px; margin-bottom:12px;
+  /* PUZZLE DE COLORES - CORRECCIÓN DE CAPAS */
+  #door-puzzle {
+    display: none; background: #0c1c48; padding: 15px; border-radius: 12px;
+    border: 2px solid var(--accent); position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 50; flex-direction: column; justify-content: center; align-items: center;
+    pointer-events: auto;
   }
-  .badge{
-    background:linear-gradient(90deg, #072343, #053457);
-    border:1px solid #0e4d7e;
-    color:#baf1ff;
-    padding:6px 10px; border-radius:999px;
-    font-size:12px; letter-spacing:.5px;
-  }
+  .target-seq { display: flex; justify-content: center; gap: 10px; margin: 10px 0; padding: 10px; background: #000; border-radius: 8px; }
+  .dot-target { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; }
+  
+  .color-btn { width: 45px; height: 45px; border-radius: 50%; border: 3px solid #fff; cursor: pointer; margin: 5px; position: relative; z-index: 60; }
 
-  /* Controles globales */
-  .toggles{
-    display:flex; flex-wrap:wrap; gap:8px;
+  .command-bar {
+    height: 120px; display: flex; justify-content: center; gap: 20px;
+    padding: 15px; background: #0f1730; border-top: 2px solid #1b2b6b;
+    z-index: 10;
   }
-  .toggle{
-    background:#0a1534; border:1px solid #21346b; color:#d6e7ff;
-    padding:8px 10px; border-radius:10px; cursor:pointer;
-    font-size:14px;
+  .cmd {
+    width: 95px; background: #1a2d6b; border: 2px solid var(--accent); border-radius: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: grab; transition: 0.2s; user-select: none;
   }
-  .toggle[aria-pressed="true"]{ outline:2px solid var(--accent); }
+  .cmd.selected { border-color: var(--accent-2); background: #224a85; box-shadow: 0 0 10px var(--accent-2); }
+  .cmd .ico { font-size: 32px; }
+  .cmd .lbl { font-size: 10px; color: white; margin-top: 5px; font-weight: bold; }
 
-  /* Pantallas/escenas */
-  .scene{ display:none; }
-  .scene.active{ display:block; }
+  .chief-overlay {
+    position: absolute; top: 75px; left: 50%; transform: translateX(-50%);
+    width: 90%; max-width: 600px;
+    background: rgba(5, 10, 24, 0.98); padding: 15px; border-radius: 15px;
+    border: 2px solid var(--accent); display: flex; align-items: center; gap: 15px;
+    opacity: 0; pointer-events: none; transition: 0.4s; z-index: 1000;
+  }
+  .chief-overlay.visible { opacity: 1; }
+  .chief-avatar { width: 60px; height: 60px; background: #1a2d6b; border-radius: 50%; display: grid; place-items: center; font-size: 30px; border: 2px solid var(--accent); }
 
-  /* ====== SCENE: BRIEFING ====== */
-  .briefing-grid{
-    display:grid; gap:16px;
-    grid-template-columns: 1.2fr .8fr;
-  }
-  @media (max-width:900px){
-    .briefing-grid{ grid-template-columns: 1fr; }
-  }
-
-  .ops-chief{
-    display:flex; gap:14px; align-items:center;
-    background:linear-gradient(180deg,#10255a,#0c1e45);
-    border:1px solid #294aa1; border-radius:16px; padding:12px;
-  }
-  .ops-avatar{
-    width:64px; height:64px; border-radius:14px; background:#1a2d6b;
-    display:grid; place-items:center; font-size:34px;
-    border:2px solid #2e58c6;
-  }
-  .ops-speech{
-    font-size:15px; color:#dbe9ff;
-  }
-  .ability-list{
-    display:grid; gap:10px;
-  }
-  .chip{
-    display:inline-flex; align-items:center; gap:8px;
-    border:1px dashed #2a4bb2; color:#cfe7ff; padding:8px 10px; border-radius:12px;
-    background:#0c1840;
-  }
-  .cta{
-    display:inline-block; margin-top:8px;
-    background: linear-gradient(90deg, #00e0ff, #00ffa8);
-    color:#001b2b; font-weight:700; border:none; border-radius:12px;
-    padding:12px 16px; cursor:pointer; font-size:16px;
-    box-shadow:0 8px 20px rgba(0, 255, 191, .2);
-  }
-
-  /* ====== SCENE: GAME ====== */
-
-  /* HUD superior */
-  .hud{
-    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-    margin-bottom:12px;
-  }
-  .robot-pill{
-    display:flex; align-items:center; gap:10px; padding:8px 12px;
-    border-radius:999px; border:1px solid #3554c7; background:#0b1a44;
-  }
-  .robot-emoji{
-    width:32px; height:32px; border-radius:8px; display:grid; place-items:center;
-    font-size:20px; background:#152a6a; border:2px solid #4c7dff;
-  }
-  .progress{
-    flex:1; height:14px; background:#0a1333; border:1px solid #1e3681; border-radius:999px; overflow:hidden;
-  }
-  .progress > span{
-    display:block; height:100%; width:0%;
-    background: linear-gradient(90deg, #00ffa8, #00e0ff);
-    transition: width .35s ease;
-  }
-  .hint{
-    font-size:13px; color:#c4e7ff; background:#0b1c49; border:1px solid #294aa1; padding:6px 8px; border-radius:10px;
-  }
-
-  /* Zona de juego lateral */
-  .playfield{
-    position:relative; border:1px solid #24418f; border-radius:18px;
-    background:
-      linear-gradient(0deg, rgba(12,26,64,.8), rgba(12,26,64,.8)),
-      url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="280" height="200"><g fill="none" stroke="%231a2f6f" stroke-width="1"><path d="M0 50h280M0 100h280M0 150h280"/><path d="M70 0v200M140 0v200M210 0v200"/></g></svg>');
-    background-size: cover;
-    min-height: 320px;
-    padding:16px;
-    display:grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap:10px;
-  }
-
-  .obstacle, .ally{
-    border:1px solid #3154c9; background:#0a1a44; border-radius:14px; padding:10px;
-    min-height:110px; position:relative;
-    outline-offset:3px;
-  }
-  .obstacle h4, .ally h4{ margin:0 0 6px; font-size:14px; color:#a8c9ff; }
-  .obstacle .body, .ally .body{
-    font-size:32px; line-height:1; display:flex; align-items:center; justify-content:center;
-    height:70px;
-  }
-  .droppable{
-    outline:2px dashed #4da7ff;
-  }
-  .ok{ box-shadow:0 0 0 2px var(--ok) inset; }
-  .bad{ box-shadow:0 0 0 2px var(--warning) inset; }
-
-  /* Panel de comandos */
-  .commands{
-    margin-top:12px;
-    display:grid; grid-template-columns: repeat(4, minmax(70px, 1fr));
-    gap:10px;
-  }
-  .cmd{
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
-    border:2px solid #3459e6;
-    background:#0b1c49; color:#e7f3ff; border-radius:16px; padding:12px 10px;
-    user-select:none; touch-action:none; cursor:grab;
-  }
-  .cmd:active{ cursor:grabbing; }
-  .cmd .ico{ font-size:28px; }
-  .cmd .lbl{ font-size:12px; text-align:center; color:#cde3ff; }
-  .cmd.selected{ outline:3px solid var(--accent); }
-
-  /* Módulo de entrada de código (Puerta) */
-  .code-panel{
-    display:none; margin-top:10px; padding:10px; border:1px solid #2a4bb2; border-radius:12px; background:#0c1c48;
-  }
-  .colors{ display:flex; gap:8px; margin:8px 0;}
-  .color-btn{
-    width:28px; height:28px; border-radius:50%; border:2px solid #fff; cursor:pointer;
-  }
-  .seq{ display:flex; gap:6px; }
-  .dot{ width:18px; height:18px; border-radius:50%; border:1px solid #eee; background:#1a2a6a; }
-
-  /* ====== SCENE: FINAL ====== */
-  .final-wrap{
-    display:grid; gap:16px;
-    grid-template-columns: 1fr .9fr;
-  }
-  @media (max-width:900px){ .final-wrap{ grid-template-columns:1fr; } }
-  .celebrate{
-    display:grid; place-items:center; min-height:260px;
-    border:1px solid #2a4bb2; background: radial-gradient(600px 240px at 70% -10%, #12306f 0%, #0b1638 60%);
-    border-radius:18px; position:relative; overflow:hidden;
-  }
-  .confetti{ position:absolute; inset:0; pointer-events:none; }
-  .final-phrase{
-    font-size: clamp(18px, 3.5vw, 28px);
-    text-align:center; color:#d8f7ff;
-  }
-  .medals{ display:flex; gap:10px; flex-wrap:wrap; }
-  .medal{
-    padding:8px 12px; border-radius:999px; font-weight:700;
-    border:1px solid #224; background:#0b1a44;
-  }
-  .m-gold{ border-color: #6e5600; background: linear-gradient(90deg, #a07a00, #ffd54a); color:#1c1400; }
-  .m-silver{ border-color:#5a5f63; background: linear-gradient(90deg, #7b8a95,#cfd8dc); color:#0e1418;}
-  .m-bronze{ border-color:#6b4320; background: linear-gradient(90deg, #8a5a2b, #d79a6a); color:#140b05;}
-  .final-actions{ display:flex; gap:8px; flex-wrap:wrap; }
-
-  /* Accesibilidad visual al arrastrar */
-  .drag-ghost{
-    position:fixed; z-index:9999; pointer-events:none;
-    background:#0b1c49; border:2px solid #4da7ff; border-radius:12px; padding:8px 10px;
-    display:flex; gap:8px; align-items:center; font-weight:700;
-    box-shadow: var(--shadow);
-  }
-
-  /* Pequeños textos de ayuda */
-  .sr-only{
-    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  .btn-main {
+    background: linear-gradient(135deg, var(--accent), #0078ff);
+    color: white; border: none; padding: 18px 40px; font-size: 22px;
+    font-weight: bold; border-radius: 50px; cursor: pointer; transition: 0.3s;
   }
 </style>
 </head>
 <body>
-  <div class="container">
-    <div class="topbar">
-      <span class="badge" aria-live="polite">Ciudadanía Digital · IA y Trabajo en Equipo</span>
-      <div class="toggles" role="group" aria-label="Preferencias de accesibilidad y audio">
-        <button id="btnNarrar" class="toggle" aria-pressed="true" title="Narración por voz">Narración: ON</button>
-        <button id="btnSonido" class="toggle" aria-pressed="true" title="Sonidos del juego">Sonido: ON</button>
-        <button id="btnReiniciar" class="toggle" title="Reiniciar misión">Reiniciar</button>
+
+<button class="audio-btn" id="btn-mute">🔊</button>
+
+<div id="game-container">
+  
+  <!-- ESCENA 1: SPLASH -->
+  <section id="scene-splash" class="scene active" style="justify-content: center; align-items: center; text-align: center;">
+    <div style="font-size: 80px; margin-bottom: 10px;">🤖🛡️❤️</div>
+    <h1 style="color: var(--accent); font-size: 42px; margin: 0;">EQUIPO IA: MISIÓN RESCATE</h1>
+    <p style="color: var(--muted); margin-bottom: 30px;">Combina la potencia de la IA con el corazón humano.</p>
+    <button class="btn-main" id="btn-to-briefing">INICIAR BRIEFING</button>
+  </section>
+
+  <!-- ESCENA 2: BRIEFING -->
+  <section id="scene-briefing" class="scene">
+    <div style="background: var(--card); border-radius: 15px; padding: 30px; border-bottom: 5px solid var(--accent); flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+      <div style="font-size:60px; margin-bottom: 20px;">👩‍🚀</div>
+      <h2 style="color:var(--accent);">SALA DE ENTRENAMIENTO</h2>
+      <p id="briefing-text" style="font-size: 20px; max-width: 700px; line-height: 1.6;"></p>
+    </div>
+    <div style="text-align: center; padding-top: 20px;">
+      <button class="btn-main" id="btn-start-mission">¡EMPEZAR RESCATE!</button>
+    </div>
+  </section>
+
+  <!-- ESCENA 3: JUEGO -->
+  <section id="scene-game" class="scene">
+    <div class="chief-overlay" id="chief-speech">
+      <div class="chief-avatar">👩‍🚀</div>
+      <div id="speech-text" style="font-size: 16px; font-weight: bold; color: #fff;"></div>
+    </div>
+
+    <div class="hud">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="font-size:25px;">🛰️</div>
+        <div>MISION: <span id="mission-status" style="color:var(--accent-2)">ACTIVA</span></div>
+      </div>
+      <div class="timer" id="timer-display">01:00</div>
+      <div style="width:150px; height:10px; background:#000; border-radius:5px; border:1px solid #333;">
+        <div id="prog-bar" style="width:0%; height:100%; background:var(--accent-2); transition:0.3s;"></div>
       </div>
     </div>
 
-    <!-- =========================
-         SCENE: BASE DE MANDO / BRIEFING
-         ========================= -->
-    <section id="scene-briefing" class="scene active" aria-labelledby="briefing-title">
-      <div class="card">
-        <h1 id="briefing-title" class="title">Base de Mando · <span style="color:var(--accent)">Briefing</span></h1>
-        <p class="subtitle">Objetivo: Reconocer qué tareas son ideales para IA y cuáles requieren el toque humano.</p>
-
-        <div class="briefing-grid" role="dialog" aria-label="Briefing inicial con la Jefa de Operaciones">
-          <div class="ops-chief" aria-live="polite">
-            <div class="ops-avatar" aria-hidden="true">🛰️</div>
-            <div class="ops-speech">
-              <strong>Jefa de Operaciones:</strong>
-              <div id="briefing-text">
-                Bienvenido/a, Comandante. Este es <strong>Bolt</strong>, nuestro robot de rescate impulsado por IA.
-                Trabajarán en equipo para rescatar a un Fuzzly atrapado en zona de desastre.
-              </div>
-            </div>
+    <div class="playfield">
+      <div class="obstacle" id="obs-0" data-need="brute">
+        <div class="obs-label">1. DERRUMBE</div>
+        <div class="obs-icon" id="icon-0">🪨</div>
+      </div>
+      <div class="obstacle" id="obs-1" data-need="fire">
+        <div class="obs-label">2. FUEGO</div>
+        <div class="obs-icon" id="icon-1">🔥🔥</div>
+      </div>
+      <div class="obstacle" id="obs-2" data-need="scan">
+        <div class="obs-label">3. PUERTA</div>
+        <div class="obs-icon" id="icon-2">🚪🔒</div>
+        
+        <div id="door-puzzle">
+          <div style="font-size: 11px; font-weight: bold; color: var(--accent);">CÓDIGO SECRETO:</div>
+          <div class="target-seq" id="code-target"></div>
+          <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 5px;">TOCA LOS COLORES EN ORDEN:</div>
+          <div style="display:flex;">
+            <button class="color-btn" data-color="r" style="background:#ff1744"></button>
+            <button class="color-btn" data-color="g" style="background:#00e676"></button>
+            <button class="color-btn" data-color="b" style="background:#2979ff"></button>
           </div>
-
-          <div>
-            <h3>Habilidades</h3>
-            <div class="ability-list" aria-describedby="habilidades-desc">
-              <span id="habilidades-desc" class="sr-only">Lista de habilidades de Bolt y humanas</span>
-              <div class="chip">🤖 <strong>De Bolt (IA):</strong> Fuerza, resistencia al fuego, escaneo rápido.</div>
-              <div class="chip">🧑 <strong>Humanas:</strong> Empatía, consuelo, cuidado emocional.</div>
-            </div>
-            <button class="cta" id="btnComenzar">¡Comenzar Misión!</button>
-            <p style="margin-top:8px;color:#c8e7ff">
-              Usa la habilidad correcta para cada obstáculo y <em>rescata al Fuzzly</em>.
-            </p>
-          </div>
+          <div id="input-dots" style="display:flex; gap:8px; margin-top:15px; height: 15px;"></div>
         </div>
       </div>
-    </section>
-
-    <!-- =========================
-         SCENE: JUEGO — VISTA LATERAL
-         ========================= -->
-    <section id="scene-game" class="scene" aria-labelledby="game-title">
-      <div class="card">
-        <h2 id="game-title" class="title">Zona de Desastre · <span style="color:var(--accent-2)">Operación Rescate</span></h2>
-
-        <!-- HUD Superior -->
-        <div class="hud" aria-live="polite">
-          <div class="robot-pill" id="boltInfo" title="Estado de Bolt">
-            <div class="robot-emoji" id="boltFace" aria-hidden="true">🤖</div>
-            <div>
-              <div><strong>Bolt</strong> · IA de Rescate</div>
-              <small id="boltState" style="color:#bfefff">Listo</small>
-            </div>
-          </div>
-          <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progreso de la misión">
-            <span id="progressBar"></span>
-          </div>
-          <div class="hint" id="hint">Arrastra un comando sobre el objetivo correcto, en orden.</div>
-        </div>
-
-        <!-- Campo de juego: 4 columnas (obstáculos en orden) -->
-        <div class="playfield" id="playfield" aria-label="Vista lateral del terreno con obstáculos">
-          <!-- 1) Derrumbe -->
-          <div class="obstacle droppable" id="obs1" data-need="brute" tabindex="0" aria-label="Derrumbe de rocas. Requiere Fuerza Bruta">
-            <h4>1. Derrumbe</h4>
-            <div class="body" aria-hidden="true">🪨🪨🪨</div>
-          </div>
-
-          <!-- 2) Muro de Fuego (requiere activar anti-fuego en Bolt, luego pasa y apaga) -->
-          <div class="obstacle droppable" id="obs2" data-need="fire" tabindex="0" aria-label="Muro de fuego. Activa Modo Anti-fuego en Bolt">
-            <h4>2. Muro de Fuego</h4>
-            <div class="body" aria-hidden="true">🔥🔥🔥</div>
-          </div>
-
-          <!-- 3) Puerta Codificada con manual escaneable -->
-          <div class="obstacle droppable" id="obs3" data-need="scan" tabindex="0" aria-label="Puerta codificada. Usa escáner sobre el manual para revelar el código">
-            <h4>3. Puerta Codificada</h4>
-            <div class="body" aria-hidden="true">🚪🔒</div>
-            <div id="manual" class="chip" style="position:absolute; right:8px; bottom:8px; cursor:help;" title="Manual de Puerta">
-              📘 Manual
-            </div>
-            <div id="codePanel" class="code-panel" aria-live="polite">
-              <div><strong>Código de colores:</strong> <span id="codeDisplay"></span></div>
-              <div class="colors" aria-label="Ingrese el código tocando los colores en orden">
-                <button class="color-btn" data-color="r" style="background:#ff1744" aria-label="Rojo"></button>
-                <button class="color-btn" data-color="g" style="background:#00e676" aria-label="Verde"></button>
-                <button class="color-btn" data-color="b" style="background:#2979ff" aria-label="Azul"></button>
-                <button class="color-btn" data-color="y" style="background:#ffd600" aria-label="Amarillo"></button>
-              </div>
-              <div class="seq" id="enteredSeq" aria-label="Secuencia ingresada"></div>
-            </div>
-          </div>
-
-          <!-- 4) Rescate Emocional (Fuzzly) -->
-          <div class="ally droppable" id="obs4" data-need="hug" tabindex="0" aria-label="Fuzzly asustado. Requiere Abrazo Humano">
-            <h4>4. Fuzzly</h4>
-            <div class="body" id="fuzzly" aria-hidden="true">🧸😰</div>
-          </div>
-        </div>
-
-        <!-- Menú de comandos (draggables + tap-select en móvil) -->
-        <div class="commands" role="toolbar" aria-label="Menú de comandos">
-          <div class="cmd" draggable="true" data-cmd="brute" id="cmd-brute" aria-label="Fuerza Bruta" tabindex="0">
-            <div class="ico">💪</div><div class="lbl">Fuerza Bruta</div>
-          </div>
-          <div class="cmd" draggable="true" data-cmd="fire" id="cmd-fire" aria-label="Modo Anti-fuego" tabindex="0">
-            <div class="ico">🔥</div><div class="lbl">Modo Anti-fuego</div>
-          </div>
-          <div class="cmd" draggable="true" data-cmd="scan" id="cmd-scan" aria-label="Escáner de Largo Alcance" tabindex="0">
-            <div class="ico">📡</div><div class="lbl">Escáner</div>
-          </div>
-          <div class="cmd" draggable="true" data-cmd="hug" id="cmd-hug" aria-label="Abrazo Humano" tabindex="0">
-            <div class="ico">🤗</div><div class="lbl">Abrazo Humano</div>
-          </div>
-        </div>
+      <div class="obstacle" id="obs-3" data-need="hug">
+        <div class="obs-label">4. FUZZLY</div>
+        <div class="obs-icon" id="icon-3">😰</div>
       </div>
-    </section>
+    </div>
 
-    <!-- =========================
-         SCENE: FINAL
-         ========================= -->
-    <section id="scene-final" class="scene" aria-labelledby="final-title">
-      <div class="card">
-        <h2 id="final-title" class="title">Operación Completa · <span style="color:var(--ok)">¡Rescate Exitoso!</span></h2>
-
-        <div class="final-wrap">
-          <div class="celebrate" id="celebrate">
-            <div class="confetti" id="confetti"></div>
-            <div class="final-phrase" id="finalPhrase">
-              “¡La fuerza del robot y el corazón del humano, juntos resuelven cualquier plano!”
-            </div>
-          </div>
-
-          <div>
-            <h3>Informe de Misión</h3>
-            <p id="report">Excelente coordinación. La IA afrontó tareas riesgosas; el humano brindó cuidado emocional.</p>
-
-            <h4>Medallas</h4>
-            <div class="medals" id="medals"></div>
-
-            <div class="final-actions">
-              <button class="toggle" id="btnNueva">Nueva Misión (rejugar)</button>
-              <button class="toggle" id="btnSkin">Conmutar Estilo de Bolt</button>
-            </div>
-
-            <p class="subtitle" style="margin-top:10px">
-              Próximos escenarios (rejugabilidad): <strong>Submarino</strong>, <strong>Estación Espacial</strong>. <em>(Próximamente)</em>
-            </p>
-          </div>
-        </div>
+    <div class="command-bar">
+      <div class="cmd" draggable="true" data-type="brute">
+        <div class="ico">💪</div><div class="lbl">FUERZA IA</div>
       </div>
-    </section>
-  </div>
+      <div class="cmd" draggable="true" data-type="fire">
+        <div class="ico">🛡️</div><div class="lbl">ESCUDO IA</div>
+      </div>
+      <div class="cmd" draggable="true" data-type="scan">
+        <div class="ico">📡</div><div class="lbl">ESCÁNER IA</div>
+      </div>
+      <div class="cmd" draggable="true" data-type="hug">
+        <div class="ico">🤗</div><div class="lbl">ABRAZO HUMANO</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ESCENA 4: FINAL -->
+  <section id="scene-final" class="scene" style="justify-content: center; align-items: center; text-align: center;">
+    <div style="background: var(--card); padding: 50px; border-radius: 30px; border: 2px solid var(--accent); max-width: 600px;">
+      <div id="final-emoji" style="font-size: 90px; margin-bottom: 20px;">🏆</div>
+      <h1 id="final-title" style="color: var(--accent);">¡RESCATE EXITOSO!</h1>
+      <p id="final-msg" style="font-size: 18px; line-height: 1.5; color: var(--muted); margin-bottom: 30px;"></p>
+      <button class="btn-main" id="btn-restart">REINTENTAR</button>
+    </div>
+  </section>
+
+</div>
 
 <script>
-/* ================================================================
-   EQUIPO IA: MISIÓN RESCATE — LÓGICA DEL JUEGO (JavaScript puro)
-   Organización por secciones:
-   1) Utilidades (audio, voz, accesibilidad)
-   2) Estado y referencia de UI
-   3) Navegación entre escenas
-   4) Mecánica de comandos (drag & drop + soporte táctil y teclado)
-   5) Reglas de obstáculos y feedback
-   6) Puerta Codificada (mini puzzle de colores)
-   7) Final de misión, medallas y “skins” de Bolt
-==================================================================*/
+const state = {
+  currentStep: 0,
+  timer: 60,
+  isMuted: false,
+  isPaused: true,
+  timerInterval: null,
+  codeSecret: [],
+  codeEntered: [],
+  puzzleActive: false
+};
 
-/* -----------------------------------------
-   1) UTILIDADES: AUDIO (WebAudio) + VOZ
------------------------------------------- */
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-let audioCtx = null;
-let sonidosOn = true;
-function ensureAudio(){
-  if(!audioCtx) audioCtx = new AudioCtx();
-}
-function beep(freq=660, dur=0.12, type='sine', gain=0.05){
-  if(!sonidosOn) return;
-  ensureAudio();
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  o.type = type; o.frequency.value = freq;
-  g.gain.value = gain;
-  o.connect(g).connect(audioCtx.destination);
-  o.start();
-  o.stop(audioCtx.currentTime + dur);
-}
-function chord(freqs=[523,659,783], dur=0.2){
-  if(!sonidosOn) return;
-  ensureAudio();
-  const now = audioCtx.currentTime;
-  freqs.forEach(f=>{
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type='triangle'; o.frequency.value=f;
-    g.gain.value = 0.035;
-    o.connect(g).connect(audioCtx.destination);
-    o.start(now);
-    o.stop(now+dur);
-  });
-}
-
-let narrarOn = true;
-function speak(text){
-  if(!narrarOn || !('speechSynthesis' in window)) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  // Preferir una voz en español si existe
-  const voices = speechSynthesis.getVoices();
-  const es = voices.find(v => /es-/.test(v.lang)) || voices.find(v=>v.lang.startsWith('es')) || voices[0];
-  if(es) utter.voice = es;
-  utter.rate = 1; utter.pitch = 1; utter.volume = 1;
-  speechSynthesis.cancel(); // evita solapamiento
-  speechSynthesis.speak(utter);
-}
-
-/* -----------------------------------------
-   2) ESTADO Y REFERENCIAS
------------------------------------------- */
-const qs = sel => document.querySelector(sel);
-const qsa = sel => [...document.querySelectorAll(sel)];
-
-// Escenas
-const sceneBriefing = qs('#scene-briefing');
-const sceneGame = qs('#scene-game');
-const sceneFinal = qs('#scene-final');
-
-// HUD
-const boltState = qs('#boltState');
-const progressBar = qs('#progressBar');
-const hint = qs('#hint');
-const boltFace = qs('#boltFace');
-
-// Obstáculos (en orden)
-const obstacles = [
-  { id:'obs1', need:'brute', name:'Derrumbe' },
-  { id:'obs2', need:'fire',  name:'Muro de Fuego' },
-  { id:'obs3', need:'scan',  name:'Puerta Codificada' },
-  { id:'obs4', need:'hug',   name:'Rescate Emocional' },
-];
-
-let currentStep = 0; // índice del obstáculo actual
-let errores = 0;     // contador de errores para medallas
-let acciones = 0;    // acciones totales
-
-// Puerta codificada
-const manual = qs('#manual');
-const codePanel = qs('#codePanel');
-const codeDisplay = qs('#codeDisplay');
-const enteredSeq = qs('#enteredSeq');
-const colorBtns = qsa('.color-btn');
-let codeSecret = [];  // ej. ['r','g','b']
-let codeEntered = [];
-
-// Preferencias
-const btnNarrar = qs('#btnNarrar');
-const btnSonido = qs('#btnSonido');
-const btnReiniciar = qs('#btnReiniciar');
-
-// Comandos
-const cmds = qsa('.cmd');
-let selectedCmd = null;         // para soporte táctil / teclado
-let draggingGhost = null;       // elemento visual durante drag manual
-
-// Final
-const medalsWrap = qs('#medals');
-const report = qs('#report');
-const btnNueva = qs('#btnNueva');
-const btnSkin = qs('#btnSkin');
-const confetti = qs('#confetti');
-
-/* -----------------------------------------
-   3) NAVEGACIÓN ENTRE ESCENAS
------------------------------------------- */
-function showScene(id){
-  [sceneBriefing, sceneGame, sceneFinal].forEach(s=>s.classList.remove('active'));
-  qs('#'+id).classList.add('active');
-  window.scrollTo({top:0, behavior:'smooth'});
-}
-
-function startBriefing(){
-  showScene('scene-briefing');
-  speak("Bienvenido, Comandante. Este es Bolt, robot de rescate. Usen la habilidad correcta en cada obstáculo y salven al Fuzzly.");
-}
-
-function startGame(){
-  // Estado inicial
-  currentStep = 0; errores = 0; acciones = 0;
-  progressBar.style.width = '0%';
-  boltFace.textContent = '🤖';
-  boltState.textContent = 'Listo';
-  hint.textContent = 'Arrastra un comando sobre el objetivo correcto, en orden.';
-  // Reset puerta
-  codeSecret = []; codeEntered = [];
-  codePanel.style.display = 'none';
-  codeDisplay.textContent = '';
-  enteredSeq.innerHTML = '';
-  // Reset visual de obstáculos
-  obstacles.forEach(o=>{
-    const el = qs('#'+o.id);
-    el.classList.remove('ok','bad');
-    // Restaurar contenido visual clave
-    if(o.id==='obs1') el.querySelector('.body').textContent='🪨🪨🪨';
-    if(o.id==='obs2') el.querySelector('.body').textContent='🔥🔥🔥';
-    if(o.id==='obs3') el.querySelector('.body').textContent='🚪🔒';
-    if(o.id==='obs4'){ qs('#fuzzly').textContent='🧸😰'; }
-  });
-
-  showScene('scene-game');
-  speak("Iniciando misión. Sigue el orden de los obstáculos y escoge el poder adecuado.");
-}
-
-// Final de misión
-function finishMission(){
-  showScene('scene-final');
-  spawnConfetti(80);
-  chord([523,659,783], .35);
-  speak("¡Misión cumplida! El calor humano es insustituible, y la IA es poderosa en tareas riesgosas.");
-  renderMedals();
-}
-
-/* -----------------------------------------
-   4) MECÁNICA DE COMANDOS (Drag & Drop + táctil + teclado)
------------------------------------------- */
-
-/* Accesibilidad: click/tap para seleccionar un comando y luego tocar el destino */
-cmds.forEach(cmd=>{
-  // Accesible: click seleccionar
-  cmd.addEventListener('click', ()=>{
-    toggleSelect(cmd);
-  });
-  cmd.addEventListener('keydown', (e)=>{
-    if(e.key === 'Enter' || e.key === ' '){
-      e.preventDefault(); toggleSelect(cmd);
-    }
-  });
-
-  // Desktop drag & drop nativo
-  cmd.addEventListener('dragstart', (e)=>{
-    e.dataTransfer.setData('text/plain', cmd.dataset.cmd);
-    e.dataTransfer.effectAllowed = 'copy';
-    makeGhost(cmd);
-  });
-  cmd.addEventListener('dragend', ()=>{
-    removeGhost();
-  });
-
-  // Soporte táctil manual (pointer events)
-  cmd.addEventListener('pointerdown', (e)=>{
-    if(e.pointerType === 'touch'){ beginManualDrag(cmd, e); }
-  }, {passive:true});
-});
-
-function toggleSelect(cmd){
-  if(selectedCmd === cmd){ cmd.classList.remove('selected'); selectedCmd=null; return; }
-  cmds.forEach(c=>c.classList.remove('selected'));
-  selectedCmd = cmd; cmd.classList.add('selected');
-  hint.textContent = `Comando seleccionado: ${labelFor(cmd.dataset.cmd)}. Toca el objetivo.`;
-  beep(760, .06, 'square', .03);
-}
-
-function labelFor(cmd){
-  return ({
-    brute:'Fuerza Bruta 💪',
-    fire:'Modo Anti-fuego 🔥',
-    scan:'Escáner de Largo Alcance 📡',
-    hug:'Abrazo Humano 🤗'
-  })[cmd] || cmd;
-}
-
-// Hacer droppables accesibles a click/tap con comando seleccionado
-qsa('.droppable').forEach(zone=>{
-  // Soporta drop nativo
-  zone.addEventListener('dragover', (e)=>{ e.preventDefault(); zone.classList.add('droppable'); });
-  zone.addEventListener('dragleave', ()=> zone.classList.remove('droppable'));
-  zone.addEventListener('drop', (e)=>{
-    e.preventDefault();
-    const cmd = e.dataTransfer.getData('text/plain');
-    zone.classList.remove('droppable');
-    applyCommand(cmd, zone.id);
-  });
-
-  // Click/tap con selección previa
-  zone.addEventListener('click', ()=>{
-    if(selectedCmd){
-      applyCommand(selectedCmd.dataset.cmd, zone.id);
-    }
-  });
-});
-
-/* Drag táctil manual (crea un “ghost” que sigue el dedo) */
-let manualDragging = null;
-function beginManualDrag(cmd, e){
-  manualDragging = { cmd, id: cmd.dataset.cmd };
-  makeGhost(cmd);
-  moveGhost(e.clientX, e.clientY);
-  window.addEventListener('pointermove', onManualMove, {passive:false});
-  window.addEventListener('pointerup', onManualUp, {once:true});
-}
-function onManualMove(e){
-  if(!manualDragging) return;
-  e.preventDefault();
-  moveGhost(e.clientX, e.clientY);
-}
-function onManualUp(e){
-  if(!manualDragging) return;
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  const dropZone = el?.closest('.droppable');
-  if(dropZone){
-    applyCommand(manualDragging.id, dropZone.id);
-  }else{
-    beep(220, .08, 'sawtooth', .04);
+const audio = {
+  ctx: null,
+  init() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+  beep(freq, dur) {
+    if (state.isMuted || !this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.frequency.value = freq;
+    g.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(); o.stop(this.ctx.currentTime + dur);
   }
-  manualDragging=null; removeGhost();
-  window.removeEventListener('pointermove', onManualMove);
-}
-function makeGhost(cmd){
-  removeGhost();
-  draggingGhost = document.createElement('div');
-  draggingGhost.className = 'drag-ghost';
-  draggingGhost.innerHTML = `<span>${cmd.querySelector('.ico').textContent}</span> <span>${labelFor(cmd.dataset.cmd)}</span>`;
-  document.body.appendChild(draggingGhost);
-}
-function moveGhost(x,y){
-  if(!draggingGhost) return;
-  draggingGhost.style.left = (x+8)+'px';
-  draggingGhost.style.top  = (y+8)+'px';
-}
-function removeGhost(){
-  draggingGhost?.remove(); draggingGhost=null;
+};
+
+function speak(text) {
+  const box = document.getElementById('chief-speech');
+  const txt = document.getElementById('speech-text');
+  txt.innerText = text;
+  box.classList.add('visible');
+
+  if (!state.isMuted && 'speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const msg = new SpeechSynthesisUtterance(text);
+    msg.lang = 'es-ES';
+    msg.onend = () => {
+      if(!state.puzzleActive) setTimeout(() => box.classList.remove('visible'), 2000);
+    };
+    speechSynthesis.speak(msg);
+  } else {
+    if(!state.puzzleActive) setTimeout(() => box.classList.remove('visible'), 5000);
+  }
 }
 
-/* -----------------------------------------
-   5) REGLAS DE OBSTÁCULOS Y FEEDBACK
------------------------------------------- */
-function applyCommand(cmd, zoneId){
-  acciones++;
+function showScene(id) {
+  document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
 
-  const obstacle = obstacles[currentStep];
-  const expectedZoneId = obstacle?.id;
-  if(zoneId !== expectedZoneId){
-    errorFeedback("Debes resolver los obstáculos en orden.");
+function startTimer() {
+  clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(() => {
+    if (state.isPaused) return;
+    state.timer--;
+    document.getElementById('timer-display').innerText = `00:${state.timer.toString().padStart(2, '0')}`;
+    if (state.timer <= 0) endGame(false);
+  }, 1000);
+}
+
+function deselectCommands() {
+  document.querySelectorAll('.cmd').forEach(c => c.classList.remove('selected'));
+}
+
+function applyCommand(type, zone) {
+  if (state.puzzleActive) return; // No permitir comandos si el puzzle está abierto
+
+  const stepIdx = parseInt(zone.id.split('-')[1]);
+  if (stepIdx !== state.currentStep) {
+    speak("Comandante, respete el orden de los obstáculos.");
     return;
   }
 
-  if(cmd !== obstacle.need){
-    // Caso especial: Muro de Fuego requiere aplicar “fire” SOBRE BOLT, no sobre el fuego.
-    if(obstacle.need === 'fire' && cmd === 'fire'){
-      // Permitir que el jugador también “active” el modo anti-fuego tocando el propio Bolt en HUD
-      boltState.textContent = 'Anti-fuego activado';
-      okFeedbackIA("¡Orden recibida! Bolt puede cruzar el fuego.");
-      // Animación de apagado
-      setTimeout(()=>{
-        qs('#'+expectedZoneId).querySelector('.body').textContent='💧💧💧';
-        advance();
-      }, 450);
-      return;
+  if (type === zone.dataset.need) {
+    if (type === 'scan') {
+        revealPuzzle();
+        deselectCommands();
+        return;
     }
-    errorFeedback("Ese no es el poder que necesitamos aquí.");
-    return;
-  }
-
-  // Éxito según tipo
-  switch(cmd){
-    case 'brute': { // Derrumbe
-      okFeedbackIA("¡Orden recibida! La habilidad de Bolt resolvió el problema.");
-      const body = qs('#'+zoneId).querySelector('.body');
-      body.textContent = '🧱➡️  ✅';
-      setTimeout(()=>advance(), 400);
-      break;
-    }
-    case 'fire': { // Muro de Fuego -> también permitimos si lo soltó sobre el muro
-      boltState.textContent = 'Anti-fuego activado';
-      okFeedbackIA("¡Orden recibida! Bolt atravesó las llamas y apagó el fuego.");
-      const body = qs('#'+zoneId).querySelector('.body');
-      body.textContent = '💧💧💧  ✅';
-      setTimeout(()=>advance(), 400);
-      break;
-    }
-    case 'scan': { // Puerta Codificada -> revelar código y esperar entrada
-      okFeedbackIA("Escaneo completado. Código de colores listo.");
-      revealCode();
-      // Avance ocurre tras validar la secuencia
-      break;
-    }
-    case 'hug': { // Rescate emocional
-      warmFeedbackHumano("¡El calor humano es un poder que ninguna IA puede replicar!");
-      qs('#fuzzly').textContent = '🧸😊';
-      boltFace.textContent = '🤖👍';
-      setTimeout(()=>advance(), 600);
-      break;
-    }
+    handleSuccess(zone);
+    deselectCommands();
+  } else {
+    audio.beep(150, 0.3);
+    speak("Esa habilidad no funciona aquí. ¡Prueba otra!");
   }
 }
 
-function okFeedbackIA(text){
-  qs('#'+obstacles[currentStep].id).classList.add('ok');
-  chord([660,880,1046], .22);
-  speak(text);
-}
-function errorFeedback(text){
-  errores++;
-  const el = qs('#'+obstacles[currentStep].id);
-  el.classList.add('bad');
-  setTimeout(()=>el.classList.remove('bad'), 300);
-  beep(180, .12, 'square', .05);
-  speak(text);
-}
-function warmFeedbackHumano(text){
-  chord([392,523,659], .28);
-  speak(text);
-}
+function handleSuccess(zone) {
+  state.currentStep++;
+  zone.classList.add('completed');
+  zone.classList.remove('active-step');
+  audio.beep(800, 0.2);
 
-function advance(){
-  currentStep++;
-  const pct = Math.round((currentStep / obstacles.length)*100);
-  progressBar.style.width = pct+'%';
-  hint.textContent = currentStep < obstacles.length
-    ? `Buen trabajo. Siguiente: ${obstacles[currentStep].name}.`
-    : '¡Objetivo asegurado!';
-  if(currentStep >= obstacles.length){
-    setTimeout(finishMission, 650);
+  const idx = zone.id.split('-')[1];
+  if (idx == 0) {
+    document.getElementById('icon-0').innerText = '🧱✅';
+    speak("¡Fuerza IA activada! Camino despejado.");
+  } else if (idx == 1) {
+    document.getElementById('icon-1').innerText = '🛡️✅';
+    speak("¡Escudo activado! Bolt cruzó las llamas.");
+  } else if (idx == 3) {
+    document.getElementById('icon-3').innerText = '🥰';
+    speak("¡Lo logramos! El Fuzzly está a salvo gracias a tu corazón.");
+    setTimeout(() => endGame(true), 2500);
   }
+  updateUI();
 }
 
-/* -----------------------------------------
-   6) PUERTA CODIFICADA (Escáner + Secuencia)
------------------------------------------- */
-// Revelar código al escanear el manual (también permite “soltar” scan encima del manual)
-manual.addEventListener('click', ()=>{
-  // Si estamos en el paso de la puerta y el jugador tocó el manual sin “scan” seleccionado, damos pista.
-  if(currentStep===2){
-    speak("Usa el escáner de largo alcance sobre el manual para revelar el código.");
-    hint.textContent = "Pista: selecciona 📡 y toca el manual.";
-  }
-});
+function updateUI() {
+  document.getElementById('prog-bar').style.width = (state.currentStep / 4 * 100) + '%';
+  document.querySelectorAll('.obstacle').forEach((z, i) => {
+    z.classList.toggle('active-step', i === state.currentStep);
+  });
+}
 
-// Cuando el jugador usa “scan” correctamente en la puerta, llamamos:
-function revealCode(){
-  if(currentStep!==2) return;
-  // Generar una secuencia aleatoria de 3 colores
-  const pool = ['r','g','b','y'];
-  codeSecret = Array.from({length:3}, ()=> pool[Math.floor(Math.random()*pool.length)]);
-  codeDisplay.innerHTML = codeSecret.map(c => colorDot(c, true)).join(' ');
-  codePanel.style.display = 'block';
-  enteredSeq.innerHTML = '';
-  codeEntered = [];
-  hint.textContent = 'Introduce el código de colores en el panel.';
-}
-function colorDot(c, show){
-  const map = {r:'#ff1744', g:'#00e676', b:'#2979ff', y:'#ffd600'};
-  const style = `display:inline-block;width:16px;height:16px;border-radius:50%;border:1px solid #fff;background:${show?map[c]:'#1a2a6a'};`;
-  return `<span style="${style}" aria-hidden="true"></span>`;
-}
-colorBtns.forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    if(currentStep!==2) return;
-    const c = btn.dataset.color;
-    codeEntered.push(c);
+function revealPuzzle() {
+  if(state.puzzleActive) return;
+  state.puzzleActive = true;
+  audio.beep(600, 0.1);
+  
+  const colors = ['r', 'g', 'b'];
+  state.codeSecret = Array.from({length: 3}, () => colors[Math.floor(Math.random() * 3)]);
+  
+  const target = document.getElementById('code-target');
+  target.innerHTML = '';
+  state.codeSecret.forEach(c => {
     const dot = document.createElement('div');
-    dot.className='dot';
-    dot.style.background = btn.style.background;
-    enteredSeq.appendChild(dot);
-    if(codeEntered.length===codeSecret.length){
-      // Validar
-      if(codeEntered.join('') === codeSecret.join('')){
-        okFeedbackIA("Código correcto. Puerta desbloqueada.");
-        qs('#obs3').querySelector('.body').textContent='🚪✅';
-        setTimeout(()=>advance(), 500);
-      }else{
-        errorFeedback("Código incorrecto. Intenta de nuevo.");
-        codeEntered=[]; enteredSeq.innerHTML='';
+    dot.className = 'dot-target';
+    dot.style.background = c === 'r' ? '#ff1744' : c === 'g' ? '#00e676' : '#2979ff';
+    target.appendChild(dot);
+  });
+  
+  document.getElementById('door-puzzle').style.display = 'flex';
+  document.getElementById('icon-2').style.display = 'none';
+  state.codeEntered = [];
+  document.getElementById('input-dots').innerHTML = '';
+  speak("¡Código detectado! Pulsa los colores en el mismo orden que ves arriba.");
+}
+
+document.querySelectorAll('.color-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // ¡ESTO EVITA QUE EL CODIGO CAMBIE!
+    if (state.currentStep !== 2) return;
+    
+    const c = btn.dataset.color;
+    state.codeEntered.push(c);
+    
+    const dot = document.createElement('div');
+    dot.style = `width:15px; height:15px; border-radius:50%; background:${btn.style.background}; border:2px solid #fff;`;
+    document.getElementById('input-dots').appendChild(dot);
+    
+    if (state.codeEntered.length === 3) {
+      if (state.codeEntered.join('') === state.codeSecret.join('')) {
+        state.puzzleActive = false;
+        document.getElementById('door-puzzle').style.display = 'none';
+        document.getElementById('icon-2').style.display = 'block';
+        document.getElementById('icon-2').innerText = '🚪✅';
+        document.getElementById('chief-speech').classList.remove('visible');
+        handleSuccess(document.getElementById('obs-2'));
+      } else {
+        audio.beep(150, 0.3);
+        state.codeEntered = [];
+        document.getElementById('input-dots').innerHTML = '';
+        speak("¡Error! Intenta la secuencia otra vez.");
       }
     }
   });
 });
 
-/* -----------------------------------------
-   7) FINAL, MEDALLAS Y SKINS
------------------------------------------- */
-function renderMedals(){
-  medalsWrap.innerHTML = '';
-  // Métrica simple de eficiencia: errores
-  let medalClass = 'm-gold', medalText = 'Oro — Eficiencia Excelente';
-  if(errores >= 1 && errores <=2){ medalClass = 'm-silver'; medalText='Plata — Buen Trabajo'; }
-  if(errores >= 3){ medalClass = 'm-bronze'; medalText='Bronce — Perseverancia'; }
+document.getElementById('btn-to-briefing').addEventListener('click', () => {
+  audio.init();
+  showScene('scene-briefing');
+  const tutorialText = "¡Comandante! Bolt (IA) tiene la fuerza para el peligro. Tú (Humano) tienes el corazón para el consuelo. ¡Trabajen juntos para salvar al Fuzzly!";
+  speak(tutorialText);
+  document.getElementById('briefing-text').innerText = tutorialText;
+});
 
-  const m = document.createElement('div');
-  m.className = `medal ${medalClass}`;
-  m.textContent = medalText + ` (Errores: ${errores})`;
-  medalsWrap.appendChild(m);
+document.getElementById('btn-start-mission').addEventListener('click', () => {
+  showScene('scene-game');
+  state.isPaused = false;
+  startTimer();
+  updateUI();
+  speak("¡Misión en marcha! Usa la Fuerza IA contra las rocas.");
+});
 
-  report.textContent = errores === 0
-    ? "Coordinación perfecta: decisiones precisas y uso óptimo de la IA."
-    : "Buen liderazgo: la IA resolvió tareas riesgosas y tú brindaste apoyo humano.";
-
-  // “Mejora cosmética” de Bolt: si oro, activar “skin luminosa” automáticamente
-  if(medalClass==='m-gold'){
-    setBoltSkin('luminous');
-  }else{
-    setBoltSkin('default');
-  }
+function endGame(win) {
+  state.isPaused = true;
+  clearInterval(state.timerInterval);
+  showScene('scene-final');
+  document.getElementById('final-msg').innerText = win 
+    ? "Has demostrado que la IA y el Corazón Humano son el mejor equipo. ¡Fuzzly está feliz!"
+    : "El tiempo se acabó. ¡Debemos intentar el rescate otra vez!";
+  document.getElementById('final-emoji').innerText = win ? '🏆' : '⚠️';
 }
 
-let boltSkin = 'default';
-function setBoltSkin(mode){
-  boltSkin = mode;
-  const pill = qs('#boltInfo');
-  if(mode==='luminous'){
-    pill.style.borderColor = '#22ffd2';
-    pill.style.background = 'linear-gradient(90deg,#0b1a44,#0a3a5a)';
-    boltFace.textContent = '🤖✨';
-  }else{
-    pill.style.borderColor = '#3554c7';
-    pill.style.background = '#0b1a44';
-    boltFace.textContent = '🤖';
-  }
-}
-
-function spawnConfetti(n=60){
-  confetti.innerHTML = '';
-  for(let i=0;i<n;i++){
-    const c = document.createElement('div');
-    const size = 6 + Math.random()*8;
-    c.style.position='absolute';
-    c.style.left = Math.random()*100 + '%';
-    c.style.top = -10+'px';
-    c.style.width=size+'px';
-    c.style.height=size+'px';
-    c.style.background = ['#00ffa8','#00e0ff','#ffd54a','#ff7aa2'][Math.floor(Math.random()*4)];
-    c.style.opacity = .9;
-    c.style.transform = `rotate(${Math.random()*360}deg)`;
-    c.style.borderRadius = Math.random()>.7 ? '50%' : '2px';
-    confetti.appendChild(c);
-
-    const fall = 800 + Math.random()*900;
-    c.animate([
-      { transform: c.style.transform, top: '-10px' },
-      { transform: `rotate(${Math.random()*720}deg)`, top: '105%' }
-    ], { duration: fall, easing: 'ease-in', fill: 'forwards' });
-  }
-}
-
-/* -----------------------------------------
-   EVENTOS DE UI GLOBALES
------------------------------------------- */
-// Botones de topbar
-btnNarrar.addEventListener('click', ()=>{
-  narrarOn = !narrarOn;
-  btnNarrar.setAttribute('aria-pressed', String(narrarOn));
-  btnNarrar.textContent = 'Narración: ' + (narrarOn?'ON':'OFF');
-  if(narrarOn) speak("Narración activada.");
-});
-btnSonido.addEventListener('click', ()=>{
-  sonidosOn = !sonidosOn;
-  btnSonido.setAttribute('aria-pressed', String(sonidosOn));
-  btnSonido.textContent = 'Sonido: ' + (sonidosOn?'ON':'OFF');
-  if(sonidosOn) beep(760,.06,'square',.03);
-});
-btnReiniciar.addEventListener('click', ()=>{ startGame(); });
-
-// CTA de briefing
-qs('#btnComenzar').addEventListener('click', ()=>{
-  startGame();
-  // Narración guiada del briefing/entrenamiento
-  setTimeout(()=>{
-    speak("Recuerda: Usa Fuerza Bruta para el derrumbe. Activa anti fuego para cruzar llamas. Escanea el manual para abrir la puerta. Y da un abrazo humano al Fuzzly.");
-  }, 300);
+document.getElementById('btn-restart').addEventListener('click', () => {
+  location.reload(); // Forma más limpia de resetear todos los estados
 });
 
-// Final
-btnNueva.addEventListener('click', ()=> startGame());
-btnSkin.addEventListener('click', ()=>{
-  setBoltSkin(boltSkin==='default' ? 'luminous' : 'default');
+document.getElementById('btn-mute').addEventListener('click', function() {
+  state.isMuted = !state.isMuted;
+  this.innerText = state.isMuted ? '🔇' : '🔊';
+  if(state.isMuted) speechSynthesis.cancel();
 });
 
-/* -----------------------------------------
-   ACCESIBILIDAD: Anunciar instrucciones iniciales
------------------------------------------- */
-window.addEventListener('load', ()=>{
-  // iOS requiere interacción para audio, pero el motor de voz puede funcionar tras carga.
-  startBriefing();
-  // Cargar voces para SpeechSynthesis (algunos navegadores necesitan evento)
-  if('speechSynthesis' in window){
-    window.speechSynthesis.onvoiceschanged = ()=>{};
-  }
+document.querySelectorAll('.cmd').forEach(cmd => {
+  cmd.addEventListener('dragstart', e => { e.dataTransfer.setData('type', cmd.dataset.type); });
+  cmd.addEventListener('click', () => {
+    deselectCommands();
+    cmd.classList.add('selected');
+    audio.beep(500, 0.05);
+  });
+});
+
+document.querySelectorAll('.obstacle').forEach(zone => {
+  zone.addEventListener('dragover', e => e.preventDefault());
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    applyCommand(e.dataTransfer.getData('type'), zone);
+  });
+  zone.addEventListener('click', () => {
+    const sel = document.querySelector('.cmd.selected');
+    if (sel) applyCommand(sel.dataset.type, zone);
+  });
 });
 </script>
 </body>
